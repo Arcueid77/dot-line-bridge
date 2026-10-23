@@ -2,8 +2,15 @@ import {createHmac, timingSafeEqual} from 'node:crypto';
 
 const ORIGIN = 'https://api.line.me';
 const MAX_BODY = 1024 * 1024;
+const MAX_MEDIA_BYTES = 8 * 1024 * 1024;
 const bounded = (value, max = 512) => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\x00-\x1f\x7f]/u.test(value);
 const fail = () => new Error('LINE provider request failed.');
+
+function safeMediaName(value) {
+  if (typeof value !== 'string') return undefined;
+  const name = value.split(/[\\/]/u).pop().replace(/[\x00-\x1f\x7f]/gu, '_').slice(0, 255).toWellFormed();
+  return name && !['.', '..'].includes(name) ? name : 'attachment';
+}
 
 function splitText(text) {
   const messages = [];
@@ -23,14 +30,21 @@ function normalize(event, credentials, receivedAt) {
       !Number.isSafeInteger(event.timestamp) || event.timestamp <= 0) return null;
   let text = '';
   const attachments = [];
+  const mediaRefs = [];
   const type = event.message.type;
   if (type === 'text') {
     if (typeof event.message.text !== 'string' || event.message.text.length > 20000 || !event.message.text.trim()) return null;
     text = event.message.text;
   } else if (['image', 'audio', 'video', 'file', 'sticker', 'location'].includes(type)) {
     const attachment = {kind: type === 'sticker' ? 'image' : type === 'location' ? 'file' : type};
-    if (bounded(event.message.fileName, 256)) attachment.name = event.message.fileName;
+    if (bounded(event.message.fileName, 256)) attachment.name = safeMediaName(event.message.fileName);
     attachments.push(attachment);
+    // External URLs are not LINE's content API and must never receive our token.
+    const native = ['image', 'audio'].includes(type) && event.message.contentProvider?.type === 'line';
+    const file = type === 'file' && (!event.message.contentProvider || event.message.contentProvider.type === 'line');
+    const ref = native || file ? {messageId: event.message.id, kind: type} : null;
+    if (ref && Number.isSafeInteger(event.message.fileSize) && event.message.fileSize >= 0) ref.size = event.message.fileSize;
+    mediaRefs.push(ref);
   } else return null;
   // A token is single use. Redelivery cannot extend the original 20 minute limit.
   const replyDeadline = Math.min(receivedAt + 55000,
@@ -38,7 +52,7 @@ function normalize(event, credentials, receivedAt) {
   return {
     id: event.webhookEventId, senderId: event.source.userId,
     conversationId: event.source.userId, text, timestamp: event.timestamp, replyDeadline,
-    replyContext: {replyToken: event.replyToken, botUserId: credentials.botUserId}, attachments,
+    replyContext: {replyToken: event.replyToken, botUserId: credentials.botUserId, mediaRefs}, attachments,
   };
 }
 
@@ -103,6 +117,38 @@ export function createProvider({credentials, onMessage, signal, fetch = globalTh
     } catch { return {status: 503, body: ''}; }
   }
 
+  async function content(ref) {
+    try {
+      const response = await fetch(`https://api-data.line.me/v2/bot/message/${encodeURIComponent(ref.messageId)}/content`, {
+        method: 'GET', redirect: 'error', credentials: 'omit',
+        headers: {Authorization: `Bearer ${credentials.channelAccessToken}`},
+        signal: AbortSignal.any([lifetime, AbortSignal.timeout(15000)]),
+      });
+      if (response.status !== 200 || Number(response.headers.get('content-length')) > MAX_MEDIA_BYTES) {
+        await response.body?.cancel();
+        throw fail();
+      }
+      const mimeType = (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+      if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u.test(mimeType) ||
+          (ref.kind === 'image' && !['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mimeType)) ||
+          (ref.kind === 'audio' && !mimeType.startsWith('audio/'))) {
+        await response.body?.cancel();
+        throw fail();
+      }
+      const chunks = [];
+      let size = 0;
+      try {
+        for await (const chunk of response.body ?? []) {
+          size += chunk.byteLength;
+          if (size > MAX_MEDIA_BYTES) throw fail();
+          chunks.push(Buffer.from(chunk));
+        }
+        if (!size) throw fail();
+        return {data: Buffer.concat(chunks), mimeType};
+      } finally { for (const chunk of chunks) chunk.fill(0); }
+    } catch { throw new Error('LINE attachment is unavailable; it may still be processing or have expired.'); }
+  }
+
   return {
     async start() {
       if (lifetime.aborted) throw new Error('LINE provider is stopped.');
@@ -122,6 +168,22 @@ export function createProvider({credentials, onMessage, signal, fetch = globalTh
       await Promise.allSettled([...pending]);
     },
     status() { return {connected: connected && !lifetime.aborted, webhookReceived}; },
+    async readAttachment({message, attachmentIndex}) {
+      const ref = message?.replyContext?.mediaRefs?.[attachmentIndex];
+      const attachment = message?.attachments?.[attachmentIndex];
+      if (!started || lifetime.aborted || message?.senderId !== credentials.ownerId ||
+          message.conversationId !== credentials.conversationId || message.replyContext?.botUserId !== credentials.botUserId ||
+          !Number.isInteger(attachmentIndex) || attachmentIndex < 0 || attachmentIndex >= 10 ||
+          !ref || typeof ref.messageId !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/u.test(ref.messageId) ||
+          ref.kind !== attachment?.kind || !['image', 'audio', 'file'].includes(ref.kind) ||
+          (ref.size !== undefined && (!Number.isSafeInteger(ref.size) || ref.size < 1 || ref.size > MAX_MEDIA_BYTES))) {
+        throw new Error('LINE attachment is unavailable.');
+      }
+      const work = content(ref);
+      pending.add(work);
+      try { return {...await work, ...(attachment.name ? {name: safeMediaName(attachment.name)} : {})}; }
+      finally { pending.delete(work); }
+    },
     async handleWebhook(input) {
       const work = processWebhook(input);
       pending.add(work);
