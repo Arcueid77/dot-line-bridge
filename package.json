@@ -29,6 +29,6 @@
     "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "dependencies": {
-    "@dot-bridge/core": "file:vendor/dot-bridge-core-0.5.0.tgz"
+    "@dot-bridge/core": "file:vendor/dot-bridge-core-0.5.1.tgz"
   }
 }
