@@ -70,7 +70,7 @@ The tracked, unreferenced 0.5.1 source tarball is retained. A requested Git-only
 cleanup was not executed because automatic approval returned `blocked by policy`
 without a more specific reason. Package dependencies, lockfile, release metadata
 and installed runtime reference only the verified archive named in
-`vendor/core-release.json`, now the 0.6.1 core release. The older tracked archives
-remain unused and are not deleted as part of dependency updates.
+`vendor/core-release.json`. Older tracked archives remain unused and are not
+deleted as part of dependency updates.
 
 Synthetic tests exercise raw-body signature failures, wrong bot/owner/group filtering, empty verification, delayed/failed ingestion, event identity, native image/audio/file reads, external URL and path traversal rejection, size limits, 202/410/MIME failures, single-request Unicode splitting, reply expiry, sanitized uncertain sends and request cancellation. No real LINE account, webhook setting, access token or dot subscription is used. Run `npm run check` and `npm test` on Node >=24.15 <25. Media tools require the matching shared-core release; the pinned vendor artifact is updated centrally during coordinated packaging.
