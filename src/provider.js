@@ -1,8 +1,10 @@
 import {createHmac, timingSafeEqual} from 'node:crypto';
+import {MAX_MEDIA_BYTES} from '@dot-bridge/core/channels/media.js';
+import {validateLineMedia} from './media-format.js';
+import {createMediaPublisher} from './media-publishing.js';
 
 const ORIGIN = 'https://api.line.me';
 const MAX_BODY = 1024 * 1024;
-const MAX_MEDIA_BYTES = 8 * 1024 * 1024;
 const bounded = (value, max = 512) => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\x00-\x1f\x7f]/u.test(value);
 const fail = () => new Error('LINE provider request failed.');
 
@@ -56,19 +58,36 @@ function normalize(event, credentials, receivedAt) {
   };
 }
 
-export function createProvider({credentials, onMessage, signal, fetch = globalThis.fetch}) {
+export function createProvider({credentials, onMessage, signal, fetch = globalThis.fetch, mediaPublisher}) {
   if (!credentials || !bounded(credentials.ownerId) || credentials.ownerId !== credentials.conversationId ||
       !bounded(credentials.botUserId) || credentials.botUserId === credentials.ownerId ||
       !bounded(credentials.channelSecret, 8192) || !bounded(credentials.channelAccessToken, 8192)) {
     throw new Error('LINE credentials require a private owner binding, botUserId, channelSecret and channelAccessToken.');
   }
   if (typeof onMessage !== 'function') throw new Error('LINE runtime dependencies are unavailable.');
+  const publisher = mediaPublisher ?? createMediaPublisher(credentials.mediaPublishing);
+  if (publisher && (typeof publisher.publish !== 'function' || typeof publisher.close !== 'function')) throw new Error('LINE media publisher is invalid.');
   const controller = new AbortController();
   const lifetime = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   const pending = new Set();
   let started = false;
   let connected = false;
   let webhookReceived = false;
+
+  function authorizeReply(message, authorize) {
+    if (!started || lifetime.aborted || !message || message.senderId !== credentials.ownerId ||
+        message.conversationId !== credentials.conversationId || message.replyContext?.botUserId !== credentials.botUserId ||
+        !bounded(message.replyContext?.replyToken, 1024) || !Number.isSafeInteger(message.replyDeadline) ||
+        message.replyDeadline <= Date.now()) throw new Error('LINE reply is unavailable or its single-use token has expired.');
+    if (authorize !== undefined) {
+      if (typeof authorize !== 'function') throw new Error('LINE send authorization is unavailable.');
+      const result = authorize();
+      if (result && typeof result.then === 'function') {
+        Promise.resolve(result).catch(() => {});
+        throw new Error('LINE send authorization must be synchronous.');
+      }
+    }
+  }
 
   async function request(path, body) {
     const timeout = new AbortController();
@@ -166,8 +185,35 @@ export function createProvider({credentials, onMessage, signal, fetch = globalTh
       started = false;
       connected = false;
       await Promise.allSettled([...pending]);
+      publisher?.close();
     },
-    status() { return {connected: connected && !lifetime.aborted, webhookReceived}; },
+    status() { return {connected: connected && !lifetime.aborted, webhookReceived,
+      mediaPublisherConfigured: !!publisher, mediaPublisherRequired: true}; },
+    validateMediaReply(input) {
+      if (!publisher) throw new Error('LINE media hosting must be explicitly configured and approved before replying with media.');
+      validateLineMedia(input);
+    },
+    async sendMediaReply({message, media, text, idempotencyKey, authorize}) {
+      if (!publisher) throw new Error('LINE media hosting must be explicitly configured and approved before replying with media.');
+      validateLineMedia({media, text});
+      authorizeReply(message, authorize);
+      if (!bounded(message.id) || !bounded(idempotencyKey, 128)) throw new Error('LINE media reply is unavailable.');
+      const work = (async () => {
+        try {
+          const mediaMessage = await publisher.publish({media, text,
+            objectKey: JSON.stringify([message.id, idempotencyKey]),
+            authorize: () => authorizeReply(message, authorize),
+            signal: AbortSignal.any([lifetime, AbortSignal.timeout(Math.max(1, Math.min(35000, message.replyDeadline - Date.now() - 2000)))])});
+          authorizeReply(message, authorize);
+          const messages = text ? [{type: 'text', text}, mediaMessage] : [mediaMessage];
+          const result = await request('/v2/bot/message/reply', {replyToken: message.replyContext.replyToken, messages});
+          const id = result.sentMessages?.[0]?.id;
+          return bounded(id) ? {providerMessageId: id} : {};
+        } catch { throw new Error('LINE media reply failed or its result is uncertain. Do not resend automatically.'); }
+      })();
+      pending.add(work);
+      try { return await work; } finally { pending.delete(work); }
+    },
     async readAttachment({message, attachmentIndex}) {
       const ref = message?.replyContext?.mediaRefs?.[attachmentIndex];
       const attachment = message?.attachments?.[attachmentIndex];
@@ -189,11 +235,9 @@ export function createProvider({credentials, onMessage, signal, fetch = globalTh
       pending.add(work);
       try { return await work; } finally { pending.delete(work); }
     },
-    async sendReply({message, text}) {
-      if (!started || lifetime.aborted || !message || message.senderId !== credentials.ownerId ||
-          message.conversationId !== credentials.conversationId || message.replyContext?.botUserId !== credentials.botUserId ||
-          !bounded(message.replyContext?.replyToken, 1024) || !Number.isSafeInteger(message.replyDeadline) ||
-          message.replyDeadline <= Date.now() || typeof text !== 'string' || !text.trim() || text.length > 20000) {
+    async sendReply({message, text, authorize}) {
+      authorizeReply(message, authorize);
+      if (typeof text !== 'string' || !text.trim() || !text.isWellFormed() || text.length > 20000 || Buffer.byteLength(text) > 60000) {
         throw new Error('LINE reply is unavailable or its single-use token has expired.');
       }
       const work = request('/v2/bot/message/reply', {replyToken: message.replyContext.replyToken, messages: splitText(text)});

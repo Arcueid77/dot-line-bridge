@@ -1,0 +1,30 @@
+[Unit]
+Description=DotBridge LINE short-lived media hosting
+After=network-online.target
+Wants=network-online.target
+Before=dot-bridge-line.service
+
+[Service]
+Type=simple
+User=dot-bridge
+Group=dot-bridge
+Environment=LINE_MEDIA_HOST_CONFIG_FILE=/var/lib/dot-bridge/private/line-media/host.json
+ExecStart=/ABSOLUTE/NODE24 /ABSOLUTE/DOT_LINE_BRIDGE/scripts/run-media-host.js --confirm-public-media-host
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+KillSignal=SIGTERM
+UMask=0077
+LimitCORE=0
+MemoryMax=128M
+MemorySwapMax=0
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dot-bridge-line-media
+
+[Install]
+WantedBy=multi-user.target

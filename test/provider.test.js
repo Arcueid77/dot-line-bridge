@@ -25,7 +25,7 @@ test('startup verifies existing bot token and configured bot identity read-only'
   assert.equal(calls.length, 1); assert.equal(calls[0].url, 'https://api.line.me/v2/bot/info');
   assert.equal(calls[0].request.method, 'GET'); assert.equal(calls[0].request.redirect, 'error');
   assert.equal(calls[0].request.headers.Authorization, 'Bearer synthetic-access');
-  assert.deepEqual(provider.status(), {connected: true, webhookReceived: false}); await provider.stop();
+  assert.deepEqual(provider.status(), {connected: true, webhookReceived: false, mediaPublisherConfigured: false, mediaPublisherRequired: true}); await provider.stop();
   const denied = runtime({fetch: async () => response({userId: 'wrong-bot'})}).provider;
   await assert.rejects(denied.start(), {message: 'LINE bot identity does not match configuration.'}); await denied.stop();
 });

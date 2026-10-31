@@ -1,6 +1,6 @@
 {
   "name": "dot-line-bridge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -12,6 +12,8 @@
     "./adapter": "./src/adapter.js",
     "./config": "./src/config.js",
     "./provider": "./src/provider.js",
+    "./media-host": "./src/media-host.js",
+    "./media-publishing": "./src/media-publishing.js",
     "./runtime/live": "./scripts/run-live.js",
     "./runtime/readiness": "./scripts/run-readiness.js",
     "./package.json": "./package.json"
@@ -21,6 +23,7 @@
     "scripts/",
     "vendor/",
     "docs/",
+    "examples/",
     "README.md",
     "LICENSE"
   ],
@@ -29,6 +32,6 @@
     "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "dependencies": {
-    "@dot-bridge/core": "file:vendor/dot-bridge-core-0.5.1.tgz"
+    "@dot-bridge/core": "file:vendor/dot-bridge-core-0.6.0.tgz"
   }
 }

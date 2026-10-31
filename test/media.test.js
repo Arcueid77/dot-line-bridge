@@ -5,7 +5,7 @@ import {createProvider} from '../src/provider.js';
 import {channel} from '../src/channel.js';
 
 const credentials = {ownerId: 'U-owner', conversationId: 'U-owner', botUserId: 'U-bot', channelSecret: 'fixture-secret', channelAccessToken: 'fixture-access'};
-const MAX = 8 * 1024 * 1024;
+const MAX = 5 * 1024 * 1024;
 function webhook(message) {
   const body = Buffer.from(JSON.stringify({destination: credentials.botUserId, events: [{type: 'message', mode: 'active',
     webhookEventId: 'fixture-event', timestamp: Date.now(), source: {type: 'user', userId: credentials.ownerId},
@@ -115,8 +115,9 @@ test('shutdown cancels owned reads and returns only sanitized provider failures'
   await provider.stop(); await reading; assert.equal(signal.aborted, true);
 });
 
-test('media reply capability remains absent without an operator-approved public media service', () => {
-  assert.deepEqual(channel.media, {read: ['image', 'audio', 'file'], reply: []});
+test('media sends stay disabled without an operator-approved public media service', () => {
+  assert.deepEqual(channel.media, {read: ['image', 'audio', 'file'], reply: ['image', 'audio']});
   const provider = createProvider({credentials, onMessage: async () => {}});
-  assert.equal(provider.sendMediaReply, undefined);
+  assert.equal(provider.status().mediaPublisherConfigured, false);
+  assert.throws(() => provider.validateMediaReply({media: {type: 'image', data: Buffer.alloc(16), mimeType: 'image/png'}}), /explicitly configured/u);
 });
