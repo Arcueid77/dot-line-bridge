@@ -15,3 +15,9 @@ LINE 的回复 token 单次有效且时间很短，dot 需要在收到消息后�
 配置好媒体下载入口后，也可以让 dot 把收到的图片或音频直接发回原私聊，文件由桥按附件编号读取，不需要来回传递很长的编码文本。LINE 仍不支持通用文件回复。
 
 TXT、Markdown、JSON、CSV 等文本附件会提供可读的文字摘录，支持 UTF-8 和带标记的 UTF-16；过长时会明确标记为截断，原文件仍可读取。PDF、Office 等其他文件继续保留原件，不把它们的二进制内容冒充文字。
+
+## 定时消息
+
+新增主动文字和固定提醒：目标只允许已绑定的本人私聊，主动发送默认关闭。管理员批准后可设置 `DOT_BRIDGE_OUTBOUND=owner-text`；原 dot 通过发送、保存提醒、查询、修改和取消工具管理，不需要重建事件订阅。每条最多 2,000 字符，重复提醒需有结束日期。
+
+详见[定时消息使用指南](https://github.com/Arcueid77/dot-bridge/blob/dev/unified-distribution/docs/scheduled-messages.md)。

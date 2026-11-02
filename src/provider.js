@@ -1,4 +1,4 @@
-import {createHmac, timingSafeEqual} from 'node:crypto';
+import {createHash, createHmac, timingSafeEqual} from 'node:crypto';
 import {MAX_MEDIA_BYTES} from '@dot-bridge/core/channels/media.js';
 import {validateLineMedia} from './media-format.js';
 import {createMediaPublisher} from './media-publishing.js';
@@ -89,13 +89,13 @@ export function createProvider({credentials, onMessage, signal, fetch = globalTh
     }
   }
 
-  async function request(path, body) {
+  async function request(path, body, headers = {}) {
     const timeout = new AbortController();
     const timer = setTimeout(() => timeout.abort(), 15000);
     try {
       const response = await fetch(`${ORIGIN}${path}`, {
         method: body ? 'POST' : 'GET', redirect: 'error',
-        headers: {Authorization: `Bearer ${credentials.channelAccessToken}`, ...(body ? {'Content-Type': 'application/json'} : {})},
+        headers: {Authorization: `Bearer ${credentials.channelAccessToken}`, ...(body ? {'Content-Type': 'application/json'} : {}), ...headers},
         ...(body ? {body: JSON.stringify(body)} : {}),
         signal: AbortSignal.any([lifetime, timeout.signal]),
       });
@@ -234,6 +234,14 @@ export function createProvider({credentials, onMessage, signal, fetch = globalTh
       const work = processWebhook(input);
       pending.add(work);
       try { return await work; } finally { pending.delete(work); }
+    },
+    async sendOwnerMessage({text, idempotencyKey, authorize}) {
+      if (!started || lifetime.aborted || typeof text !== 'string' || !text.trim() || !text.isWellFormed() || text.length > 2000) throw fail();
+      authorize();
+      const digest=createHash('sha256').update(idempotencyKey).digest('hex');
+      const retryKey=`${digest.slice(0,8)}-${digest.slice(8,12)}-${digest.slice(12,16)}-${digest.slice(16,20)}-${digest.slice(20,32)}`;
+      await request('/v2/bot/message/push', {to:credentials.ownerId, messages:[{type:'text', text}]}, {'X-Line-Retry-Key':retryKey});
+      return {};
     },
     async sendReply({message, text, authorize}) {
       authorizeReply(message, authorize);

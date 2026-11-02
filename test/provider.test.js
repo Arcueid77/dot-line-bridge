@@ -20,6 +20,13 @@ function runtime(options = {}) {
   return {provider, messages, calls};
 }
 
+test('proactive LINE text uses push to the bound owner with a stable retry key, never a consumed reply token',async t=>{
+  const {provider,calls}=runtime();t.after(()=>provider.stop());await provider.start();
+  await provider.sendOwnerMessage({text:'fixture notification',idempotencyKey:'fixture-occurrence',authorize:()=>{}});
+  const call=calls.at(-1),body=JSON.parse(call.request.body);assert.equal(call.url,'https://api.line.me/v2/bot/message/push');assert.equal(body.to,credentials.ownerId);assert.equal(body.messages[0].text,'fixture notification');assert.equal(Object.hasOwn(body,'replyToken'),false);assert.match(call.request.headers['X-Line-Retry-Key'],/^[a-f0-9-]{36}$/);
+  const before=calls.length;await assert.rejects(provider.sendOwnerMessage({text:'blocked',idempotencyKey:'other',authorize:()=>{throw Error('revoked');}}));assert.equal(calls.length,before);
+});
+
 test('startup verifies existing bot token and configured bot identity read-only', async () => {
   const {provider, calls} = runtime(); await provider.start();
   assert.equal(calls.length, 1); assert.equal(calls[0].url, 'https://api.line.me/v2/bot/info');
