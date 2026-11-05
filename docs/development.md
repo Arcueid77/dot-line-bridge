@@ -1,5 +1,12 @@
 # Provider implementation
 
+## 当前文档基线 / Current documentation baseline
+
+组件 0.5.4 使用固定 core 0.11.1，版本和源 SHA 以 `package.json`、`vendor/core-release.json` 及锁文件为准。Windows／Linux CI 已运行。2026-11-05 记录：平台账号与真实端到端验收待完成，源码和合成检查已覆盖。
+
+Source documentation follows registered capabilities. Preserve reviewed artifacts and package documentation through the next normal release. Actual account acceptance remains separate.
+
+
 `src/provider.js` implements LINE Messaging API; core owns encrypted state, final-reply deduplication, MCP, callback policy and lifecycle. Core's separate live-only loopback listener exposes `POST /webhook` on port 8895 by default; MCP remains on 8795.
 
 Primary sources reviewed on 2026-10-23:

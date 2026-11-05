@@ -25,7 +25,8 @@
     "docs/",
     "examples/",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "README.en.md"
   ],
   "scripts": {
     "check": "node scripts/check.js",

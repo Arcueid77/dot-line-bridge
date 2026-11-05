@@ -1,5 +1,7 @@
 # 连接 LINE
 
+[English](setup.en.md)
+
 本渠道使用 [LINE Messaging API](https://developers.line.biz/en/docs/messaging-api/overview/)。您在 LINE 中添加自己的 Official Account，再给它发私聊，由桥接转交给原 ChatGPT dot。需要已有的 Messaging API channel，不能用个人 LINE 登录密码或普通 webhook URL 代替。
 
 ## 准备配置
@@ -34,7 +36,7 @@ BRIDGE_MODE=tunnel
 TUNNEL_SERVICE_OPERATION=live
 TUNNEL_SERVICE_OWNER_ID=tunnel-owner:dot-bridge
 HOST=127.0.0.1
-PORT=8795
+PORT=8806
 LINE_TRANSPORT=webhook
 LINE_WEBHOOK_PORT=8895
 LINE_CREDENTIALS_FILE=/etc/dot-bridge/private/line.credentials.json
@@ -66,7 +68,7 @@ location = /dotbridge/line {
 
 在该页扫描 Official Account 的加好友二维码，用本人 LINE 添加账号。若希望只由 dot 回答，可在 LINE Official Account Manager 关闭该账号原有的 Auto-reply messages；Greeting messages 也可按需关闭，避免把平台自动回复误当成 dot 的回答。[官方回复设置](https://developers.line.biz/en/docs/messaging-api/building-bot/#settings-on-line-official-account-manager)
 
-代理必须原样保留请求体和 `x-line-signature`，转发的 `Host` 改为内部接收地址并去掉 `Origin`，如上所示。桥接先用 channel secret 验证原始字节的 HMAC-SHA256 签名，再读取 JSON 和绑定信息。不要把 MCP 端口 `8795` 或内部 webhook 端口 `8895` 直接绑定到公网。总仓库只启动内部监听，不会替您修改 TLS、域名、Nginx 或防火墙。
+代理必须原样保留请求体和 `x-line-signature`，转发的 `Host` 改为内部接收地址并去掉 `Origin`，如上所示。桥接先用 channel secret 验证原始字节的 HMAC-SHA256 签名，再读取 JSON 和绑定信息。不要把 示例 MCP 端口 `8806` 或内部 webhook 端口 `8895` 直接绑定到公网。总仓库只启动内部监听，不会替您修改 TLS、域名、Nginx 或防火墙。
 
 ## 连接原 dot
 
