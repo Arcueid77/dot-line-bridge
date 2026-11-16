@@ -20,6 +20,46 @@ function runtime(options = {}) {
   return {provider, messages, calls};
 }
 
+test('loading animation is owner-scoped and final replies expose management quick replies when enabled', async t => {
+  const {provider, messages, calls} = runtime({interaction: {management: {enabled: true}}});
+  t.after(() => provider.stop());
+  await provider.start();
+  await provider.handleWebhook(signed([event()]));
+  const message = messages[0];
+  await provider.setTyping({message, active: true, authorize() {}});
+  assert.equal(calls.at(-1).url, 'https://api.line.me/v2/bot/chat/loading/start');
+  assert.deepEqual(JSON.parse(calls.at(-1).request.body), {chatId: credentials.ownerId, loadingSeconds: 10});
+  const before = calls.length;
+  await assert.rejects(provider.setTyping({message, active: true, authorize() { throw Error('revoked'); }}));
+  assert.equal(calls.length, before);
+  await provider.sendReply({message, text: 'done', authorize() {}});
+  const body = JSON.parse(calls.at(-1).request.body);
+  assert.equal(body.replyToken, 'reply-token');
+  assert.deepEqual(body.messages[0].quickReply.items.map(item => item.action.text), ['/status', '/queue', '/subscription', '/help']);
+});
+
+test('native choices consume one reply token and only signed owner postbacks reach core', async t => {
+  const selected = [];
+  const {provider, messages, calls} = runtime({onChoice: async value => selected.push(value)});
+  t.after(() => provider.stop());
+  await provider.start();
+  await provider.handleWebhook(signed([event()]));
+  const token = 'db_' + 'a'.repeat(24);
+  const receipt = await provider.sendChoiceReply({message: messages[0], text: 'Choose',
+    choices: [{token, label: 'A'}], authorize() {}});
+  assert.equal(receipt.id, 'sent-1');
+  assert.equal(JSON.parse(calls.at(-1).request.body).messages[0].quickReply.items[0].action.data, token);
+  const postback = {type: 'postback', mode: 'active', webhookEventId: 'postback-1',
+    timestamp: Date.now(), source: {type: 'user', userId: credentials.ownerId},
+    replyToken: 'new-reply-token', postback: {data: token}};
+  assert.equal((await provider.handleWebhook(signed([postback]))).status, 200);
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].message.replyContext.replyToken, 'new-reply-token');
+  await provider.handleWebhook(signed([{...postback, source: {type: 'user', userId: 'other'}}]));
+  await provider.handleWebhook(signed([{...postback, source: {type: 'group', userId: credentials.ownerId, groupId: 'group'}}]));
+  assert.equal(selected.length, 1);
+});
+
 test('proactive LINE text uses push to the bound owner with a stable retry key, never a consumed reply token',async t=>{
   const {provider,calls}=runtime();t.after(()=>provider.stop());await provider.start();
   await provider.sendOwnerMessage({text:'fixture notification',idempotencyKey:'fixture-occurrence',authorize:()=>{}});

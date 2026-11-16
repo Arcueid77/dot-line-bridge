@@ -58,7 +58,7 @@ function normalize(event, credentials, receivedAt) {
   };
 }
 
-export function createProvider({credentials, onMessage, signal, fetch = globalThis.fetch, mediaPublisher}) {
+export function createProvider({credentials, interaction, onMessage, onChoice, signal, fetch = globalThis.fetch, mediaPublisher}) {
   if (!credentials || !bounded(credentials.ownerId) || credentials.ownerId !== credentials.conversationId ||
       !bounded(credentials.botUserId) || credentials.botUserId === credentials.ownerId ||
       !bounded(credentials.channelSecret, 8192) || !bounded(credentials.channelAccessToken, 8192)) {
@@ -128,6 +128,19 @@ export function createProvider({credentials, onMessage, signal, fetch = globalTh
     try {
       for (const event of payload.events) {
         if (lifetime.aborted) return {status: 503, body: ''};
+        if (event?.type === 'postback' && typeof onChoice === 'function' && event.mode === 'active' &&
+            event.source?.type === 'user' && event.source.userId === credentials.ownerId &&
+            !event.source.groupId && !event.source.roomId && bounded(event.webhookEventId) &&
+            bounded(event.replyToken, 1024) && Number.isSafeInteger(event.timestamp) &&
+            event.timestamp > 0 && receivedAt - event.timestamp <= 55000 && event.timestamp <= receivedAt + 300000 &&
+            typeof event.postback?.data === 'string' && /^db_[A-Za-z0-9_-]{24}$/u.test(event.postback.data)) {
+          await onChoice({token: event.postback.data, senderId: credentials.ownerId,
+            conversationId: credentials.conversationId, message: {id: event.webhookEventId,
+              senderId: credentials.ownerId, conversationId: credentials.conversationId, text: '',
+              timestamp: event.timestamp, replyDeadline: receivedAt + 55000,
+              replyContext: {replyToken: event.replyToken, botUserId: credentials.botUserId}}});
+          continue;
+        }
         const message = normalize(event, credentials, receivedAt);
         if (message) await onMessage(message);
       }
@@ -189,6 +202,32 @@ export function createProvider({credentials, onMessage, signal, fetch = globalTh
     },
     status() { return {connected: connected && !lifetime.aborted, webhookReceived,
       mediaPublisherConfigured: !!publisher, mediaPublisherRequired: true}; },
+    async setTyping({message, active, authorize}) {
+      if (!active) return;
+      authorizeReply(message, authorize);
+      const work = request('/v2/bot/chat/loading/start', {chatId: credentials.ownerId, loadingSeconds: 10});
+      pending.add(work);
+      try { await work; } finally { pending.delete(work); }
+    },
+    async sendChoiceReply({message, text, choices, authorize}) {
+      authorizeReply(message, authorize);
+      if (typeof text !== 'string' || !text.trim() || text.length > 20000 ||
+          !Array.isArray(choices) || choices.length < 1 || choices.length > 10 ||
+          choices.some(choice => typeof choice.label !== 'string' || !choice.label.trim() ||
+            typeof choice.token !== 'string' || !/^db_[A-Za-z0-9_-]{24}$/u.test(choice.token))) throw fail();
+      const messages = splitText(text);
+      messages.at(-1).quickReply = {items: choices.map(choice => ({type: 'action',
+        action: {type: 'postback', label: Array.from(choice.label).slice(0, 20).join(''),
+          data: choice.token, displayText: choice.label}}))};
+      const work = request('/v2/bot/message/reply', {replyToken: message.replyContext.replyToken, messages});
+      pending.add(work);
+      try {
+        const result = await work;
+        const id = result.sentMessages?.at(-1)?.id;
+        if (!bounded(id, 256)) throw fail();
+        return {id};
+      } finally { pending.delete(work); }
+    },
     validateMediaReply(input) {
       if (!publisher) throw new Error('LINE media hosting must be explicitly configured and approved before replying with media.');
       validateLineMedia(input);
@@ -248,7 +287,12 @@ export function createProvider({credentials, onMessage, signal, fetch = globalTh
       if (typeof text !== 'string' || !text.trim() || !text.isWellFormed() || text.length > 20000 || Buffer.byteLength(text) > 60000) {
         throw new Error('LINE reply is unavailable or its single-use token has expired.');
       }
-      const work = request('/v2/bot/message/reply', {replyToken: message.replyContext.replyToken, messages: splitText(text)});
+      const messages = splitText(text);
+      if (interaction?.management?.enabled === true) {
+        messages.at(-1).quickReply = {items: ['status', 'queue', 'subscription', 'help'].map(command =>
+          ({type: 'action', action: {type: 'message', label: '/' + command, text: '/' + command}}))};
+      }
+      const work = request('/v2/bot/message/reply', {replyToken: message.replyContext.replyToken, messages});
       pending.add(work);
       try {
         const response = await work;

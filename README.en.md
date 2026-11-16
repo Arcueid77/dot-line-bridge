@@ -36,3 +36,18 @@ Retain one consumer, database, storage key and subscription. Unknown delivery is
 Numbered text choices let the user answer with a selection. A dot environment with programmatic file access can upload generated media in bounded encrypted chunks, verify its size and SHA-256, then submit the source-bound final reply. Files are limited to 5 MiB and this provider's supported media types and formats.
 
 Literal reminders support weekdays, fixed intervals, pause, resume and delivery history. Check `check_line_outbound` before use and supply the saved reminder ID and current revision. Resuming skips old paused occurrences.
+
+
+## Tasks, consecutive messages and speech
+
+Task tools return a source-bound reference, passive deadline and remaining seconds. The original dot can save one complete text result. The paired owner can use `/tasks` and `/result reference` in the original DM. Source retention applies, and ambiguous delivery stays uncertain.
+
+The protected interaction policy accepts `queue`, for example `{"mode":"batch","window_ms":750,"max_messages":5}`. Modes are `independent`, `serial` and `batch`, defaulting to independent. A batch retains every source and replies through the last source as its anchor. Attachments, quotes and work already started are handled separately, with the existing conversation/member isolation.
+
+Linux operators can install eSpeak NG and the protected audio runtime, then set `DOT_BRIDGE_SPEECH_SYNTHESIS=local-espeak` and `DOT_BRIDGE_SPEECH_VOICE=zh`. The original dot uses `check_line_speech` and `reply_line_speech`, limited to 2000 characters and 120 seconds. The full text is also retained in the task record.
+
+An explicitly rejected one-time proactive send can be retried after owner confirmation using `retry_line_outbound`, its original ID and current revision. The per-channel proactive switch still applies. Recurring reminders keep their edit/resume flow. Hosted-dot stop, reset and approvals use the original platform controls.
+
+## Processing cues and quick actions
+
+Owner DMs can show the native loading animation. Quick replies expose help, status, queue and subscription checks. Signed choice postbacks bind the owner, original chat and first durable selection; repeated clicks preserve that result. Replies still need the roughly 55-second reply-token window. A complete result saved after that deadline is available through task tools or a fresh owner `/result` request. Synthesized speech uses MP3 and requires the approved media publisher.
