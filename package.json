@@ -1,6 +1,6 @@
 {
   "name": "dot-line-bridge",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -34,6 +34,6 @@
     "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "dependencies": {
-    "@dot-bridge/core": "file:vendor/dot-bridge-core-0.14.1.tgz"
+    "@dot-bridge/core": "file:vendor/dot-bridge-core-0.14.2.tgz"
   }
 }

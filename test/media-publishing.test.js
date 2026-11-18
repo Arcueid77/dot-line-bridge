@@ -7,6 +7,9 @@ import {validateLineMedia} from '../src/media-format.js';
 import {signedHeaders} from '@dot-bridge/core/transport/transport.js';
 import {createProvider} from '../src/provider.js';
 import {spawnSync} from 'node:child_process';
+import {SourceSpeech} from '@dot-bridge/core/channels/speech.js';
+import {createSpeechSynthesizer} from '@dot-bridge/core/audio/synthesis.js';
+import {pcm16Wave} from '@dot-bridge/core/audio/wav.js';
 
 const key = Buffer.alloc(32, 17);
 const policy = {enabled: true, endpoint: 'https://media.example.test/line-publish', publicBaseUrl: 'https://media.example.test/line-media/'};
@@ -104,6 +107,43 @@ test('bad formats, malformed M4A, excessive duration and generic files are rejec
   assert.throws(() => validateLineMedia({media: {type: 'image', mimeType: 'image/png', data: png}, text: 'x'.repeat(5001)}));
   const video = m4a(); video.write('vide', video.indexOf('soun'));
   assert.throws(() => validateLineMedia({media: {type: 'audio', mimeType: 'audio/mp4', data: video}}));
+});
+
+const fixtureFfmpeg=process.env.DOT_BRIDGE_TEST_FFMPEG??'ffmpeg';
+const haveFfmpeg=spawnSync(fixtureFfmpeg,['-version'],{stdio:'ignore',windowsHide:true,timeout:5000}).status===0;
+test('local LINE speech encodes and publishes a bounded M4A through the real FFmpeg flags', {
+  skip:haveFfmpeg?false:'FFmpeg is required for the real encoder fixture',
+},async()=>{
+  const {host,publisher}=runtime();
+  const synthesizer=createSpeechSynthesizer({
+    env:{DOT_BRIDGE_SPEECH_SYNTHESIS:'local-espeak'},platform:'linux',validate(){},
+    lock:()=>({fd:1,close(){}}),
+    execute:async(name,args,input,options)=>{
+      if(name==='espeak-ng')return pcm16Wave(Buffer.alloc(32000*59.85));
+      const result=spawnSync(fixtureFfmpeg,args,{input,maxBuffer:options.limit,windowsHide:true,timeout:10000});
+      assert.equal(result.status,0);
+      return result.stdout;
+    },
+  });
+  let receipt;
+  const speech=new SourceSpeech({channel:'line',authorize(){},existing:()=>null,synthesizer,
+    status:message_id=>({message_id,status:receipt?'pending':'none'}),
+    queue:async(_source,media)=>{
+      assert.equal(media.name,'voice.m4a');assert.equal(media.mimeType,'audio/mp4');
+      receipt=await publisher.publish({media,objectKey:'synthetic-speech',authorize(){}});
+    },
+  });
+  try{
+    assert.equal(speech.check().max_duration_seconds,60);
+    assert.equal(speech.check().mime_type,'audio/mp4');
+    const result=await speech.reply({message_id:'synthetic-source',text:'Synthetic speech',idempotency_key:'synthetic'});
+    assert.equal(result.status,'pending');
+    assert.ok(receipt.duration>=59850&&receipt.duration<=60000);
+    const url=new URL(receipt.originalContentUrl);
+    const response=host.handle({method:'GET',url:url.pathname+url.search});
+    assert.equal(response.status,200);
+    assert.match(response.headers['Content-Type'],/^audio\/mp4$/u);
+  }finally{await speech.close();publisher.close();host.close();}
 });
 
 test('host caps declared allocations and expires unfinished uploads without refreshing their lifetime', () => {

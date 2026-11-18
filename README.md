@@ -39,10 +39,10 @@ TXT、Markdown、JSON、CSV 等文本附件会提供可读的文字摘录，支�
 
 受保护交互配置支持 `queue`，例如 `{"mode":"batch","window_ms":750,"max_messages":5}`。`mode` 可选 `independent`、`serial`、`batch`，默认 independent。合并保留每条来源，并以最后一条为回复锚点。附件、引用、已开始处理的来源各自处理，会话与成员范围沿用原隔离规则。
 
-Linux 管理员可安装本地 eSpeak NG 和受保护音频环境，配置 `DOT_BRIDGE_SPEECH_SYNTHESIS=local-espeak`、`DOT_BRIDGE_SPEECH_VOICE=zh`。原 dot 使用 `check_line_speech` 和 `reply_line_speech`，单次最多 2000 字符、120 秒。完整文字同时保存在任务记录里。
+Linux 管理员可安装本地 eSpeak NG 和受保护音频环境，配置 `DOT_BRIDGE_SPEECH_SYNTHESIS=local-espeak`、`DOT_BRIDGE_SPEECH_VOICE=zh`。原 dot 使用 `check_line_speech` 和 `reply_line_speech`，单次最多 2000 字符，M4A 最长 60 秒。完整文字同时保存在任务记录里。
 
 平台明确拒绝的一次性主动发送，可在本人确认后通过 `retry_line_outbound` 重试同一编号和当前版本。主动发送开关继续按渠道配置，重复提醒保持原来的编辑和恢复流程。原 dot 任务的停止、重置和审批通过原平台管理。
 
 ## 处理提示和快捷操作
 
-本人私聊处理期间可显示原生加载动画。快捷按钮提供帮助、状态、队列和订阅查询。原生选择通过签名 postback 绑定本人、原会话和唯一选择结果，重复点击沿用首次结果。回复仍需在平台 reply token 的约 55 秒期限内完成；超过期限的完整结果可在任务工具或本人新发的 `/result` 请求中读取。语音合成使用 MP3，需已配置获准的媒体托管入口。
+本人私聊处理期间可显示原生加载动画。快捷按钮提供帮助、状态、队列和订阅查询。原生选择通过签名 postback 绑定本人、原会话和唯一选择结果，重复点击沿用首次结果。回复仍需在平台 reply token 的约 55 秒期限内完成；超过期限的完整结果可在任务工具或本人新发的 `/result` 请求中读取。语音合成使用 M4A，需已配置获准的媒体托管入口。
